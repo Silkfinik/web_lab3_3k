@@ -9,6 +9,10 @@ import org.example.dao.impl.SubscriberDaoImpl
 import org.example.db.DataInitializer
 import org.example.db.DatabaseManager
 import org.example.entity.Subscriber
+import org.example.exception.DataAccessException
+import org.example.exception.DuplicateEntryException
+import org.example.exception.EntryNotFoundException
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.util.Scanner
 
@@ -17,7 +21,11 @@ val serviceDao: ServiceDao = ServiceDaoImpl()
 val invoiceDao: InvoiceDao = InvoiceDaoImpl()
 val scanner = Scanner(System.`in`)
 
+private val logger = LoggerFactory.getLogger("MainApp")
+
 fun main() {
+    logger.info("Application starting...")
+
     println("Добро пожаловать в Telecom App!")
     println("Выберите режим работы:")
     println("  1. Начать с чистой базой данных (все изменения будут удалены)")
@@ -34,15 +42,17 @@ fun main() {
                 }
                 DatabaseManager.initDatabase()
                 DataInitializer.insertInitialData()
-                println("Новая база данных успешно создана и заполнена тестовыми данными.")
+                logger.info("New database created and initialized.")
+                println("✅ Новая база данных успешно создана и заполнена тестовыми данными.")
             } catch (e: Exception) {
-                println("Ошибка при инициализации базы данных: ${e.message}")
-                e.printStackTrace()
+                logger.error("FATAL: Error during database setup", e)
+                println("❌ FATAL: Ошибка при инициализации базы данных: ${e.message}")
                 return
             }
         }
         "2" -> {
-            println("\nПодключение к существующей базе данных...")
+            logger.info("Connecting to existing database.")
+            println("\n✅ Подключение к существующей базе данных...")
         }
         else -> {
             println("Неверный выбор. Выход из приложения.")
@@ -55,24 +65,40 @@ fun main() {
     while (true) {
         printMenu()
         print("Выберите опцию: ")
-        val choice = scanner.nextInt()
+        val choice = readlnOrNull()?.toIntOrNull()
 
-        when (choice) {
-            1 -> askAndShowSubscriberServices()
-            2 -> askAndShowSubscriberInvoices()
-            3 -> showAllServices()
-            4 -> payInvoice()
-            5 -> blockSubscriber()
-            6 -> showAllSubscribers()
-            7 -> showSubscriberDetails()
-            8 -> addSubscriber()
-            9 -> showUnpaidInvoices()
-            10 -> connectServiceToSubscriber()
-            0 -> {
-                println("Выход из приложения.")
-                return
+        try {
+            when (choice) {
+                1 -> askAndShowSubscriberServices()
+                2 -> askAndShowSubscriberInvoices()
+                3 -> showAllServices()
+                4 -> payInvoice()
+                5 -> blockSubscriber()
+                6 -> showAllSubscribers()
+                7 -> showSubscriberDetails()
+                8 -> addSubscriber()
+                9 -> showUnpaidInvoices()
+                10 -> connectServiceToSubscriber()
+                0 -> {
+                    logger.info("Application shutting down.")
+                    println("Выход из приложения.")
+                    return
+                }
+                else -> println("Неверная опция, попробуйте снова.")
             }
-            else -> println("Неверная опция, попробуйте снова.")
+        }
+        catch (e: DuplicateEntryException) {
+            println("❗️ ОШИБКА: ${e.message}")
+        }
+        catch (e: EntryNotFoundException) {
+            println("❗️ ОШИБКА: ${e.message}")
+        }
+        catch (e: DataAccessException) {
+            println("❗️ ОШИБКА БАЗЫ ДАННЫХ: ${e.message}")
+        }
+        catch (e: Exception) {
+            logger.error("An unexpected error occurred", e) // Логгируем
+            println("❗️ Произошла непредвиденная ошибка: ${e.message}")
         }
         println("-".repeat(40))
     }
@@ -108,8 +134,18 @@ private fun showSubscriberServices(subscriberId: Int) {
         println("У абонента с ID $subscriberId нет подключенных услуг.")
     } else {
         println("Текущие услуги абонента ID $subscriberId:")
-        services.forEach { println("  - ${it.name} (${it.monthlyFee} руб./мес.)") }
+        services.forEach { println("  - ${it.name} (${"%.2f".format(it.monthlyFee)} руб./мес.)") }
     }
+}
+
+private fun askAndShowSubscriberInvoices() {
+    print("Введите ID абонента: ")
+    val id = readlnOrNull()?.toIntOrNull()
+    if (id == null) {
+        println("Некорректный ввод ID.")
+        return
+    }
+    showSubscriberInvoices(id)
 }
 
 private fun showSubscriberInvoices(subscriberId: Int) {
@@ -125,16 +161,6 @@ private fun showSubscriberInvoices(subscriberId: Int) {
     }
 }
 
-private fun askAndShowSubscriberInvoices() {
-    print("Введите ID абонента: ")
-    val id = readlnOrNull()?.toIntOrNull()
-    if (id == null) {
-        println("Некорректный ввод ID.")
-        return
-    }
-    showSubscriberInvoices(id)
-}
-
 private fun showAllServices() {
     val services = serviceDao.findAll()
     println("Список всех доступных услуг:")
@@ -142,6 +168,7 @@ private fun showAllServices() {
         println("  - [ID: ${it.id}] ${it.name} (${"%.2f".format(it.monthlyFee)} руб./мес.)")
     }
 }
+
 private fun payInvoice() {
     print("Введите ID счета для оплаты: ")
     val id = readlnOrNull()?.toIntOrNull()
@@ -153,21 +180,19 @@ private fun payInvoice() {
     val isPaid = invoiceDao.pay(id)
 
     if (isPaid) {
-        println("Счет №$id был успешно оплачен.")
+        println("✅ Счет №$id был успешно оплачен.")
         val subscriberId = invoiceDao.findSubscriberIdByInvoiceId(id)
         if (subscriberId != null) {
             showSubscriberInvoices(subscriberId)
         }
-    } else {
-        println("❌ Ошибка: Счет с ID $id не найден.")
     }
 }
 
 private fun blockSubscriber() {
     print("Введите ID абонента для блокировки: ")
-    val id = scanner.nextInt()
+    val id = readlnOrNull()?.toIntOrNull() ?: return
     subscriberDao.block(id)
-    println("Абонент с ID $id был заблокирован.")
+    println("✅ Абонент с ID $id был заблокирован.")
 }
 
 private fun showAllSubscribers() {
@@ -186,12 +211,7 @@ private fun showAllSubscribers() {
 
 private fun showSubscriberDetails() {
     print("Введите ID абонента: ")
-    val id = readlnOrNull()?.toIntOrNull()
-    if (id == null) {
-        println("Некорректный ввод ID.")
-        return
-    }
-
+    val id = readlnOrNull()?.toIntOrNull() ?: return
     val subscriber = subscriberDao.findById(id)
     if (subscriber == null) {
         println("Абонент с ID $id не найден.")
@@ -200,21 +220,20 @@ private fun showSubscriberDetails() {
         println("  Имя: ${subscriber.name}")
         println("  Телефон: ${subscriber.phoneNumber}")
         println("  Баланс: ${"%.2f".format(subscriber.balance)} руб.")
-        println("  Статус: ${if (subscriber.isBlocked) "Заблокирован" else "Активен"}")
+        println("  Статус: ${if (subscriber.isBlocked) "Заблокирован" else "АктивЕН"}")
     }
 }
 
 private fun addSubscriber() {
     print("Введите имя нового абонента: ")
     val name = readln()
-
     print("Введите номер телефона (+375...): ")
     val phone = readln()
 
     val newSubscriber = Subscriber(name = name, phoneNumber = phone, balance = 0.0, isBlocked = false)
     val created = subscriberDao.add(newSubscriber)
 
-    println("Абонент успешно создан с ID: ${created.id}")
+    println("✅ Абонент успешно создан с ID: ${created.id}")
 }
 
 private fun showUnpaidInvoices() {
@@ -233,26 +252,15 @@ private fun connectServiceToSubscriber() {
     println("Выберите абонента для подключения услуги:")
     showAllSubscribers()
     print("Введите ID абонента: ")
-    val subscriberId = readlnOrNull()?.toIntOrNull()
-    if (subscriberId == null) {
-        println("Некорректный ввод.")
-        return
-    }
+    val subscriberId = readlnOrNull()?.toIntOrNull() ?: return
 
     println("\nВыберите услугу для подключения:")
     showAllServices()
     print("Введите ID услуги: ")
-    val serviceId = readlnOrNull()?.toIntOrNull()
-    if (serviceId == null) {
-        println("Некорректный ввод.")
-        return
-    }
+    val serviceId = readlnOrNull()?.toIntOrNull() ?: return
 
-    try {
-        serviceDao.linkServiceToSubscriber(subscriberId, serviceId)
-        println("Услуга успешно подключена абоненту.")
-        showSubscriberServices(subscriberId)
-    } catch (e: Exception) {
-        println("Ошибка: Не удалось подключить услугу. Возможно, она уже подключена.")
-    }
+    serviceDao.linkServiceToSubscriber(subscriberId, serviceId)
+
+    println("✅ Услуга успешно подключена абоненту.")
+    showSubscriberServices(subscriberId)
 }
