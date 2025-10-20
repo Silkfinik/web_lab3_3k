@@ -43,16 +43,16 @@ fun main() {
                 DatabaseManager.initDatabase()
                 DataInitializer.insertInitialData()
                 logger.info("New database created and initialized.")
-                println("✅ Новая база данных успешно создана и заполнена тестовыми данными.")
+                println("Новая база данных успешно создана и заполнена тестовыми данными.")
             } catch (e: Exception) {
                 logger.error("FATAL: Error during database setup", e)
-                println("❌ FATAL: Ошибка при инициализации базы данных: ${e.message}")
+                println("FATAL: Ошибка при инициализации базы данных: ${e.message}")
                 return
             }
         }
         "2" -> {
             logger.info("Connecting to existing database.")
-            println("\n✅ Подключение к существующей базе данных...")
+            println("\nПодключение к существующей базе данных...")
         }
         else -> {
             println("Неверный выбор. Выход из приложения.")
@@ -97,7 +97,7 @@ fun main() {
             println("❗️ ОШИБКА БАЗЫ ДАННЫХ: ${e.message}")
         }
         catch (e: Exception) {
-            logger.error("An unexpected error occurred", e) // Логгируем
+            logger.error("An unexpected error occurred", e)
             println("❗️ Произошла непредвиденная ошибка: ${e.message}")
         }
         println("-".repeat(40))
@@ -192,7 +192,7 @@ private fun blockSubscriber() {
     print("Введите ID абонента для блокировки: ")
     val id = readlnOrNull()?.toIntOrNull() ?: return
     subscriberDao.block(id)
-    println("✅ Абонент с ID $id был заблокирован.")
+    println("Абонент с ID $id был заблокирован.")
 }
 
 private fun showAllSubscribers() {
@@ -233,7 +233,7 @@ private fun addSubscriber() {
     val newSubscriber = Subscriber(name = name, phoneNumber = phone, balance = 0.0, isBlocked = false)
     val created = subscriberDao.add(newSubscriber)
 
-    println("✅ Абонент успешно создан с ID: ${created.id}")
+    println("Абонент успешно создан с ID: ${created.id}")
 }
 
 private fun showUnpaidInvoices() {
@@ -261,6 +261,6 @@ private fun connectServiceToSubscriber() {
 
     serviceDao.linkServiceToSubscriber(subscriberId, serviceId)
 
-    println("✅ Услуга успешно подключена абоненту.")
+    println("Услуга успешно подключена абоненту.")
     showSubscriberServices(subscriberId)
 }
