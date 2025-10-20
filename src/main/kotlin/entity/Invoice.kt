@@ -15,19 +15,18 @@ import java.time.LocalDate
 )
 data class Invoice(
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.AUTO)
     val id: Int = 0,
 
-    val amount: Double = 0.0, // <-- ДОБАВЛЕН DEFAULT
+    val amount: Double = 0.0,
 
     @Column(name = "issue_date")
-    val issueDate: LocalDate = LocalDate.now(), // <-- ДОБАВЛЕН DEFAULT
+    val issueDate: LocalDate = LocalDate.now(),
 
     @Column(name = "is_paid")
     var isPaid: Boolean = false,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "subscriber_id")
-    // ❗️ ВАЖНО: Сделано nullable и добавлен default
     val subscriber: Subscriber? = null
 )

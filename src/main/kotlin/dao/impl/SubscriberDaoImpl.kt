@@ -23,17 +23,15 @@ class SubscriberDaoImpl : SubscriberDao {
             em.transaction.commit()
             return result
         } catch (e: Exception) {
-            em.transaction.rollback()
+            if (em.transaction.isActive) {
+                em.transaction.rollback()
+            }
             logger.error("JPA transaction failed", e)
-
-            // ИСПРАВЛЕНИЕ 4: Оборачиваем и выбрасываем исключение
-            // так, чтобы компилятор был уверен, что функция завершится.
             val exceptionToThrow = when (e) {
                 is PersistenceException -> DataAccessException("Ошибка доступа к данным JPA.", e)
                 else -> e
             }
             throw exceptionToThrow
-
         } finally {
             em.close()
         }
@@ -42,7 +40,6 @@ class SubscriberDaoImpl : SubscriberDao {
     override fun findById(id: Int): Subscriber? {
         val em = JpaManager.getEntityManager()
 
-        // ИСПРАВЛЕНИЕ 3: Выносим объявление переменной
         val subscriber: Subscriber?
 
         try {
@@ -50,7 +47,6 @@ class SubscriberDaoImpl : SubscriberDao {
                 .setParameter("id", id)
                 .singleResult
         } catch (_: jakarta.persistence.NoResultException) {
-            // ИСПРАВЛЕНИЕ 2: Меняем 'e' на '_', так как параметр не используется
             return null
         } catch (e: Exception) {
             logger.error("Failed to find subscriber by id $id", e)
@@ -59,7 +55,6 @@ class SubscriberDaoImpl : SubscriberDao {
             em.close()
         }
 
-        // ИСПРАВЛЕНИЕ 3: 'return' вынесен из 'try'
         return subscriber
     }
 
@@ -90,19 +85,23 @@ class SubscriberDaoImpl : SubscriberDao {
     }
 
     override fun add(subscriber: Subscriber): Subscriber {
-        // ИСПРАВЛЕНИЕ 1: Добавлен 'return'
         return executeInTransaction { em ->
             try {
                 em.persist(subscriber)
                 logger.info("New subscriber created with id ${subscriber.id}")
                 return@executeInTransaction subscriber
             } catch (e: PersistenceException) {
-                // Проверяем на дубликат (например, по номеру телефона)
                 if (e.message?.contains("UNIQUE_") == true) {
                     throw DuplicateEntryException("Абонент с номером ${subscriber.phoneNumber} уже существует.", e)
                 }
                 throw DataAccessException("Ошибка при добавлении абонента.", e)
             }
+        }
+    }
+
+    override fun deleteAll() {
+        executeInTransaction { em ->
+            em.createNamedQuery("Subscriber.deleteAll").executeUpdate()
         }
     }
 }

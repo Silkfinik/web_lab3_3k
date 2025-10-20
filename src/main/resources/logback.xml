@@ -20,7 +20,7 @@
         </encoder>
     </appender>
 
-    <logger name="com.yourcompany.telecom" level="DEBUG"/>
+    <logger name="com.example.telecom" level="DEBUG"/>
 
     <root level="INFO">
         <appender-ref ref="STDOUT" />

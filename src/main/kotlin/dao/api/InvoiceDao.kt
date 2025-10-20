@@ -1,5 +1,4 @@
 package org.example.dao.api
-
 import org.example.entity.Invoice
 
 interface InvoiceDao {
@@ -7,4 +6,5 @@ interface InvoiceDao {
     fun pay(invoiceId: Int): Boolean
     fun findSubscriberIdByInvoiceId(invoiceId: Int): Int?
     fun findUnpaid(): List<Invoice>
+    fun add(invoice: Invoice): Invoice
 }

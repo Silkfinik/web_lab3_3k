@@ -14,7 +14,6 @@ class ServiceDaoImpl : ServiceDao {
 
     private val logger = LoggerFactory.getLogger(ServiceDaoImpl::class.java)
 
-    // Коды ошибок H2 из вашего старого DAO
     private companion object {
         const val H2_DUPLICATE_KEY_CODE = 23505
         const val H2_INTEGRITY_VIOLATION_CODE = 23503
@@ -31,7 +30,9 @@ class ServiceDaoImpl : ServiceDao {
             em.transaction.commit()
             return result
         } catch (e: Exception) {
-            em.transaction.rollback()
+            if (em.transaction.isActive) {
+                em.transaction.rollback()
+            }
             logger.error("JPA transaction failed", e)
             val exceptionToThrow = when (e) {
                 is PersistenceException -> DataAccessException("Ошибка доступа к данным JPA.", e)
@@ -46,7 +47,6 @@ class ServiceDaoImpl : ServiceDao {
     override fun findAll(): List<Service> {
         val em = JpaManager.getEntityManager()
         try {
-            // Используем NamedQuery "Service.findAll" из Service.kt
             return em.createNamedQuery("Service.findAll", Service::class.java)
                 .resultList
         } catch (e: Exception) {
@@ -60,7 +60,6 @@ class ServiceDaoImpl : ServiceDao {
     override fun findBySubscriberId(subscriberId: Int): List<Service> {
         val em = JpaManager.getEntityManager()
         try {
-            // Используем NamedQuery "Service.findBySubscriberId" из Service.kt
             return em.createNamedQuery("Service.findBySubscriberId", Service::class.java)
                 .setParameter("subscriberId", subscriberId)
                 .resultList
@@ -75,7 +74,6 @@ class ServiceDaoImpl : ServiceDao {
     override fun linkServiceToSubscriber(subscriberId: Int, serviceId: Int) {
         executeInTransaction { em ->
             try {
-                // Находим обе сущности, которыми хотим управлять
                 val subscriber = em.find(Subscriber::class.java, subscriberId)
                 val service = em.find(Service::class.java, serviceId)
 
@@ -86,23 +84,18 @@ class ServiceDaoImpl : ServiceDao {
                     throw EntryNotFoundException("Услуга с ID $serviceId не найдена.")
                 }
 
-                // Так как связь @ManyToMany управляется со стороны Subscriber,
-                // мы просто добавляем услугу в его коллекцию
                 if (subscriber.services.contains(service)) {
                     throw DuplicateEntryException("Эта услуга уже подключена абоненту.")
                 }
 
                 subscriber.services.add(service)
 
-                // Сохраняем изменения
                 em.merge(subscriber)
 
                 logger.info("Service $serviceId linked to subscriber $subscriberId")
 
             } catch (e: PersistenceException) {
                 logger.error("Failed to link service $serviceId to subscriber $subscriberId", e)
-                // Обрабатываем ошибки по аналогии со старым кодом
-                // (хотя JPA делает часть проверок за нас)
                 val cause = e.cause
                 if (cause is SQLException) {
                     when (cause.errorCode) {
@@ -114,6 +107,23 @@ class ServiceDaoImpl : ServiceDao {
                 }
                 throw DataAccessException("Ошибка при подключении услуги.", e)
             }
+        }
+    }
+
+    override fun add(service: Service): Service {
+        return executeInTransaction { em ->
+            try {
+                em.persist(service)
+                return@executeInTransaction service
+            } catch (e: PersistenceException) {
+                throw DataAccessException("Ошибка при добавлении услуги.", e)
+            }
+        }
+    }
+
+    override fun deleteAll() {
+        executeInTransaction { em ->
+            em.createNamedQuery("Service.deleteAll").executeUpdate()
         }
     }
 }

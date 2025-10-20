@@ -1,5 +1,4 @@
 package org.example.dao.api
-
 import org.example.entity.Subscriber
 
 interface SubscriberDao {
@@ -7,4 +6,5 @@ interface SubscriberDao {
     fun findAll(): List<Subscriber>
     fun block(subscriberId: Int)
     fun add(subscriber: Subscriber): Subscriber
+    fun deleteAll()
 }

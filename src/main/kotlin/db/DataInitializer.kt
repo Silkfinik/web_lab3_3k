@@ -1,57 +1,66 @@
 package org.example.db
 
+import org.example.entity.Invoice
+import org.example.entity.Service
+import org.example.entity.Subscriber
+import org.example.main.invoiceDao
+import org.example.main.serviceDao
+import org.example.main.subscriberDao
 import org.slf4j.LoggerFactory
-import java.sql.Connection
-import java.sql.SQLException
+import java.time.LocalDate
 
 object DataInitializer {
 
     private val logger = LoggerFactory.getLogger(DataInitializer::class.java)
 
     fun insertInitialData() {
-        println("Inserting initial data for testing...")
+        println("Inserting initial data using JPA DAO...")
 
-        val sqlStatements = listOf(
-            // Абоненты
-            "DELETE FROM subscribers;",
-            "INSERT INTO subscribers(name, phone_number, balance, is_blocked) VALUES ('Иван Иванов', '+375291234567', 150.50, false);",
-            "INSERT INTO subscribers(name, phone_number, balance, is_blocked) VALUES ('Петр Петров', '+375337654321', -50.00, true);",
-
-            // Услуги
-            "DELETE FROM services;",
-            "INSERT INTO services(id, name, monthly_fee) VALUES (101, 'Интернет 50 Мбит/с', 450.00);",
-            "INSERT INTO services(id, name, monthly_fee) VALUES (102, 'Мобильная связь', 300.00);",
-            "INSERT INTO services(id, name, monthly_fee) VALUES (103, 'Антивирус', 100.00);",
-
-            // Подключенные услуги
-            "DELETE FROM subscriber_services;",
-            "INSERT INTO subscriber_services(subscriber_id, service_id) VALUES (1, 101);",
-            "INSERT INTO subscriber_services(subscriber_id, service_id) VALUES (1, 102);",
-            "INSERT INTO subscriber_services(subscriber_id, service_id) VALUES (2, 102);",
-            "INSERT INTO subscriber_services(subscriber_id, service_id) VALUES (2, 103);",
-
-            // Счета
-            "DELETE FROM invoices;",
-            "INSERT INTO invoices(id, subscriber_id, amount, issue_date, is_paid) VALUES (1001, 1, 750.00, '2025-09-01', true);",
-            "INSERT INTO invoices(id, subscriber_id, amount, issue_date, is_paid) VALUES (1002, 2, 400.00, '2025-09-05', false);"
-        )
-
-        var connection: Connection? = null
         try {
-            connection = ConnectionPool.getConnection()
-            connection.createStatement().use { statement ->
-                sqlStatements.forEach { sql ->
-                    statement.executeUpdate(sql)
-                }
-            }
+            subscriberDao.deleteAll()
+            serviceDao.deleteAll()
+
+
+            val sub1 = subscriberDao.add(
+                Subscriber(name = "Иван Иванов", phoneNumber = "+375291234567", balance = 150.50)
+            )
+            val sub2 = subscriberDao.add(
+                Subscriber(name = "Петр Петров", phoneNumber = "+375337654321", balance = -50.00, isBlocked = true)
+            )
+
+            val serv1 = serviceDao.add(Service(name = "Интернет 50 Мбит/с", monthlyFee = 450.00))
+            val serv2 = serviceDao.add(Service(name = "Мобильная связь", monthlyFee = 300.00))
+            val serv3 = serviceDao.add(Service(name = "Антивирус", monthlyFee = 100.00))
+
+            serviceDao.linkServiceToSubscriber(sub1.id, serv1.id)
+            serviceDao.linkServiceToSubscriber(sub1.id, serv2.id)
+            serviceDao.linkServiceToSubscriber(sub2.id, serv2.id)
+            serviceDao.linkServiceToSubscriber(sub2.id, serv3.id)
+
+            invoiceDao.add(
+                Invoice(
+                    subscriber = sub1,
+                    amount = 750.00,
+                    issueDate = LocalDate.parse("2025-09-01"),
+                    isPaid = true
+                )
+            )
+            invoiceDao.add(
+                Invoice(
+                    subscriber = sub2,
+                    amount = 400.00,
+                    issueDate = LocalDate.parse("2025-09-05"),
+                    isPaid = false
+                )
+            )
+
             logger.info("Initial data inserted successfully.")
             println("Initial data inserted.")
-        } catch (e: SQLException) {
+
+        } catch (e: Exception) {
             logger.error("Failed to insert initial data", e)
             println("Error during data initialization: ${e.message}")
             throw e
-        } finally {
-            ConnectionPool.releaseConnection(connection)
         }
     }
 }

@@ -23,7 +23,9 @@ class InvoiceDaoImpl : InvoiceDao {
             em.transaction.commit()
             return result
         } catch (e: Exception) {
-            em.transaction.rollback()
+            if (em.transaction.isActive) {
+                em.transaction.rollback()
+            }
             logger.error("JPA transaction failed", e)
             val exceptionToThrow = when (e) {
                 is PersistenceException -> DataAccessException("Ошибка доступа к данным JPA.", e)
@@ -38,7 +40,6 @@ class InvoiceDaoImpl : InvoiceDao {
     override fun findBySubscriberId(subscriberId: Int): List<Invoice> {
         val em = JpaManager.getEntityManager()
         try {
-            // "Invoice.findBySubscriberId"
             return em.createNamedQuery("Invoice.findBySubscriberId", Invoice::class.java)
                 .setParameter("subscriberId", subscriberId)
                 .resultList
@@ -52,7 +53,6 @@ class InvoiceDaoImpl : InvoiceDao {
 
     override fun pay(invoiceId: Int): Boolean {
         return executeInTransaction { em ->
-            // "Invoice.pay"
             val rowsAffected = em.createNamedQuery("Invoice.pay")
                 .setParameter("id", invoiceId)
                 .executeUpdate()
@@ -70,7 +70,6 @@ class InvoiceDaoImpl : InvoiceDao {
     override fun findSubscriberIdByInvoiceId(invoiceId: Int): Int? {
         val em = JpaManager.getEntityManager()
         try {
-            // "Invoice.findSubscriberIdById"
             return em.createNamedQuery("Invoice.findSubscriberIdById", Int::class.java)
                 .setParameter("id", invoiceId)
                 .singleResult
@@ -88,7 +87,6 @@ class InvoiceDaoImpl : InvoiceDao {
     override fun findUnpaid(): List<Invoice> {
         val em = JpaManager.getEntityManager()
         try {
-            // "Invoice.findUnpaid"
             return em.createNamedQuery("Invoice.findUnpaid", Invoice::class.java)
                 .resultList
         } catch (e: Exception) {
@@ -96,6 +94,17 @@ class InvoiceDaoImpl : InvoiceDao {
             throw DataAccessException("Ошибка при получении списка неоплаченных счетов.", e)
         } finally {
             em.close()
+        }
+    }
+
+    override fun add(invoice: Invoice): Invoice {
+        return executeInTransaction { em ->
+            try {
+                em.persist(invoice)
+                return@executeInTransaction invoice
+            } catch (e: PersistenceException) {
+                throw DataAccessException("Ошибка при добавлении счета.", e)
+            }
         }
     }
 }

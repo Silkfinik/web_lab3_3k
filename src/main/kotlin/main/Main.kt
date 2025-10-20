@@ -35,13 +35,11 @@ fun main() {
         invoiceDao = InvoiceDaoImpl()
 
         logger.debug("Forcing JPA Manager initialization...")
-        // ❗️ ИЗМЕНЕНИЕ: Инициализируем JpaManager вместо ConnectionPool
         val em = JpaManager.getEntityManager()
         em.close()
         logger.debug("JPA Manager initialized successfully.")
 
     } catch (e: Throwable) {
-        // ❗️ ИЗМЕНЕНИЕ: Обновляем сообщение об ошибке
         logger.error("FATAL: Failed to initialize application (JPA Manager failed)", e)
         println("КРИТИЧЕСКАЯ ОШИБКА ЗАПУСКА: ${e.message}")
         println("Проверьте persistence.xml или доступность БД.")
@@ -59,12 +57,6 @@ fun main() {
             "1" -> {
                 println("\nОчистка и заполнение базы данных тестовыми данными...")
                 try {
-                    // ❗️ ИЗМЕНЕНИЕ:
-                    // УДАЛЯЕМ: ручное удаление файла .db
-                    // УДАЛЯЕМ: DatabaseManager.initDatabase()
-
-                    // Просто вызываем DataInitializer, который теперь
-                    // будет использовать JPA для очистки и вставки данных
                     DataInitializer.insertInitialData()
 
                     logger.info("Database re-initialized with test data.")
@@ -276,9 +268,6 @@ private fun showUnpaidInvoices() {
     } else {
         println("Список неоплаченных счетов:")
         invoices.forEach {
-            // ❗️ ИЗМЕНЕНИЕ ЗДЕСЬ:
-            // Было: it.subscriber.id
-            // Стало: it.subscriber?.id (используем safe call)
             println("  - Счет №${it.id} (абонент ID ${it.subscriber?.id}) на сумму ${it.amount} руб.")
         }
     }
@@ -289,7 +278,6 @@ private fun connectServiceToSubscriber() {
     showAllSubscribers()
     print("Введите ID абонента: ")
 
-    // Убедитесь, что эта строка написана именно так:
     val subscriberId = readlnOrNull()?.toIntOrNull() ?: return
 
     println("\nВыберите услугу для подключения:")
@@ -297,7 +285,6 @@ private fun connectServiceToSubscriber() {
     print("Введите ID услуги: ")
     val serviceId = readlnOrNull()?.toIntOrNull() ?: return
 
-    // Эта строка вызывает DAO
     serviceDao.linkServiceToSubscriber(subscriberId, serviceId)
 
     println("Услуга успешно подключена абоненту.")

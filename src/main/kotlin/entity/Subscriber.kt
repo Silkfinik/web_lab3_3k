@@ -14,13 +14,13 @@ import jakarta.persistence.*
 )
 data class Subscriber(
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.AUTO)
     val id: Int = 0,
 
-    val name: String = "", // <-- ДОБАВЛЕН DEFAULT
+    val name: String = "",
 
     @Column(name = "phone_number", unique = true)
-    val phoneNumber: String = "", // <-- ДОБАВЛЕН DEFAULT
+    val phoneNumber: String = "",
 
     val balance: Double = 0.0,
 
