@@ -1,8 +1,16 @@
 package org.example.db
 
+import org.slf4j.LoggerFactory
+import java.sql.Connection
+import java.sql.SQLException
+
 object DataInitializer {
+
+    private val logger = LoggerFactory.getLogger(DataInitializer::class.java)
+
     fun insertInitialData() {
         println("Inserting initial data for testing...")
+
         val sqlStatements = listOf(
             // Абоненты
             "DELETE FROM subscribers;",
@@ -28,13 +36,22 @@ object DataInitializer {
             "INSERT INTO invoices(id, subscriber_id, amount, issue_date, is_paid) VALUES (1002, 2, 400.00, '2025-09-05', false);"
         )
 
-        JdbcConnector.getConnection().use { connection ->
+        var connection: Connection? = null
+        try {
+            connection = ConnectionPool.getConnection()
             connection.createStatement().use { statement ->
                 sqlStatements.forEach { sql ->
                     statement.executeUpdate(sql)
                 }
             }
+            logger.info("Initial data inserted successfully.")
+            println("Initial data inserted.")
+        } catch (e: SQLException) {
+            logger.error("Failed to insert initial data", e)
+            println("Error during data initialization: ${e.message}")
+            throw e
+        } finally {
+            ConnectionPool.releaseConnection(connection)
         }
-        println("Initial data inserted.")
     }
 }

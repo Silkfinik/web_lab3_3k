@@ -6,6 +6,7 @@ import org.example.dao.api.SubscriberDao
 import org.example.dao.impl.InvoiceDaoImpl
 import org.example.dao.impl.ServiceDaoImpl
 import org.example.dao.impl.SubscriberDaoImpl
+import org.example.db.ConnectionPool
 import org.example.db.DataInitializer
 import org.example.db.DatabaseManager
 import org.example.entity.Subscriber
@@ -15,10 +16,11 @@ import org.example.exception.EntryNotFoundException
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.util.Scanner
+import kotlin.system.exitProcess
 
-val subscriberDao: SubscriberDao = SubscriberDaoImpl()
-val serviceDao: ServiceDao = ServiceDaoImpl()
-val invoiceDao: InvoiceDao = InvoiceDaoImpl()
+lateinit var subscriberDao: SubscriberDao
+lateinit var serviceDao: ServiceDao
+lateinit var invoiceDao: InvoiceDao
 val scanner = Scanner(System.`in`)
 
 private val logger = LoggerFactory.getLogger("MainApp")
@@ -26,38 +28,63 @@ private val logger = LoggerFactory.getLogger("MainApp")
 fun main() {
     logger.info("Application starting...")
 
+    try {
+        subscriberDao = SubscriberDaoImpl()
+        serviceDao = ServiceDaoImpl()
+        invoiceDao = InvoiceDaoImpl()
+
+        logger.debug("Forcing Connection Pool initialization...")
+        val conn = ConnectionPool.getConnection()
+        ConnectionPool.releaseConnection(conn)
+        logger.debug("Connection Pool initialized successfully.")
+
+    } catch (e: Throwable) {
+        logger.error("FATAL: Failed to initialize application (Connection Pool failed)", e)
+        println("КРИТИЧЕСКАЯ ОШИБКА ЗАПУСКА: ${e.message}")
+        println("Проверьте database.properties или доступность БД.")
+        exitProcess(1)
+    }
+
     println("Добро пожаловать в Telecom App!")
     println("Выберите режим работы:")
     println("  1. Начать с чистой базой данных (все изменения будут удалены)")
     println("  2. Продолжить работу с существующими данными")
     print("Ваш выбор [1 или 2]: ")
 
-    when (readlnOrNull()) {
-        "1" -> {
-            println("\nИнициализация чистой базы данных...")
-            try {
-                val dbFile = File("telecom.mv.db")
-                if (dbFile.exists()) {
-                    dbFile.delete()
+    try {
+        when (readlnOrNull()) {
+            "1" -> {
+                println("\nИнициализация чистой базы данных...")
+                try {
+                    val dbFile = File("telecom.mv.db")
+                    if (dbFile.exists()) {
+                        dbFile.delete()
+                    }
+                    DatabaseManager.initDatabase()
+                    DataInitializer.insertInitialData()
+                    logger.info("New database created and initialized.")
+                    println("Новая база данных успешно создана и заполнена тестовыми данными.")
+                } catch (e: Exception) {
+                    logger.error("FATAL: Error during database setup", e)
+                    println("FATAL: Ошибка при инициализации базы данных: ${e.message}")
+                    return
                 }
-                DatabaseManager.initDatabase()
-                DataInitializer.insertInitialData()
-                logger.info("New database created and initialized.")
-                println("Новая база данных успешно создана и заполнена тестовыми данными.")
-            } catch (e: Exception) {
-                logger.error("FATAL: Error during database setup", e)
-                println("FATAL: Ошибка при инициализации базы данных: ${e.message}")
+            }
+
+            "2" -> {
+                logger.info("Connecting to existing database.")
+                println("\nПодключение к существующей базе данных...")
+            }
+
+            else -> {
+                println("Неверный выбор. Выход из приложения.")
                 return
             }
         }
-        "2" -> {
-            logger.info("Connecting to existing database.")
-            println("\nПодключение к существующей базе данных...")
-        }
-        else -> {
-            println("Неверный выбор. Выход из приложения.")
-            return
-        }
+    } catch (e: Exception) {
+        logger.error("FATAL: Error during database setup", e)
+        println("FATAL: Ошибка при инициализации базы данных: ${e.message}")
+        return
     }
 
     println("\n" + "-".repeat(40))

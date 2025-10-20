@@ -1,4 +1,4 @@
-2025-10-13 00:41:30.882950+03:00 database: wrong user or password; user: ""
+2025-10-20 14:43:50.387330+03:00 database: wrong user or password; user: "SA"
 org.h2.message.DbException: Wrong user name or password [28000-224]
 	at org.h2.message.DbException.get(DbException.java:223)
 	at org.h2.message.DbException.get(DbException.java:199)
@@ -11,72 +11,9 @@ org.h2.message.DbException: Wrong user name or password [28000-224]
 	at org.h2.Driver.connect(Driver.java:59)
 	at java.sql/java.sql.DriverManager.getConnection(DriverManager.java:683)
 	at java.sql/java.sql.DriverManager.getConnection(DriverManager.java:191)
-	at org.example.db.JdbcConnector.getConnection(JdbcConnector.kt:23)
-	at org.example.db.DataInitializer.insertInitialData(DataInitializer.kt:31)
-	at org.example.main.MainKt.main(Main.kt:32)
-	at org.example.main.MainKt.main(Main.kt)
-Caused by: org.h2.jdbc.JdbcSQLInvalidAuthorizationSpecException: Wrong user name or password [28000-224]
-	at org.h2.message.DbException.getJdbcSQLException(DbException.java:522)
-	at org.h2.message.DbException.getJdbcSQLException(DbException.java:489)
-	... 15 more
-2025-10-13 00:41:41.245006+03:00 database: wrong user or password; user: ""
-org.h2.message.DbException: Wrong user name or password [28000-224]
-	at org.h2.message.DbException.get(DbException.java:223)
-	at org.h2.message.DbException.get(DbException.java:199)
-	at org.h2.message.DbException.get(DbException.java:188)
-	at org.h2.engine.Engine.openSession(Engine.java:154)
-	at org.h2.engine.Engine.openSession(Engine.java:222)
-	at org.h2.engine.Engine.createSession(Engine.java:201)
-	at org.h2.engine.SessionRemote.connectEmbeddedOrServer(SessionRemote.java:343)
-	at org.h2.jdbc.JdbcConnection.<init>(JdbcConnection.java:125)
-	at org.h2.Driver.connect(Driver.java:59)
-	at java.sql/java.sql.DriverManager.getConnection(DriverManager.java:683)
-	at java.sql/java.sql.DriverManager.getConnection(DriverManager.java:191)
-	at org.example.db.JdbcConnector.getConnection(JdbcConnector.kt:23)
-	at org.example.db.DataInitializer.insertInitialData(DataInitializer.kt:31)
-	at org.example.main.MainKt.main(Main.kt:32)
-	at org.example.main.MainKt.main(Main.kt)
-Caused by: org.h2.jdbc.JdbcSQLInvalidAuthorizationSpecException: Wrong user name or password [28000-224]
-	at org.h2.message.DbException.getJdbcSQLException(DbException.java:522)
-	at org.h2.message.DbException.getJdbcSQLException(DbException.java:489)
-	... 15 more
-2025-10-13 00:42:12.729889+03:00 database: wrong user or password; user: ""
-org.h2.message.DbException: Wrong user name or password [28000-224]
-	at org.h2.message.DbException.get(DbException.java:223)
-	at org.h2.message.DbException.get(DbException.java:199)
-	at org.h2.message.DbException.get(DbException.java:188)
-	at org.h2.engine.Engine.openSession(Engine.java:154)
-	at org.h2.engine.Engine.openSession(Engine.java:222)
-	at org.h2.engine.Engine.createSession(Engine.java:201)
-	at org.h2.engine.SessionRemote.connectEmbeddedOrServer(SessionRemote.java:343)
-	at org.h2.jdbc.JdbcConnection.<init>(JdbcConnection.java:125)
-	at org.h2.Driver.connect(Driver.java:59)
-	at java.sql/java.sql.DriverManager.getConnection(DriverManager.java:683)
-	at java.sql/java.sql.DriverManager.getConnection(DriverManager.java:191)
-	at org.example.db.JdbcConnector.getConnection(JdbcConnector.kt:23)
-	at org.example.db.DataInitializer.insertInitialData(DataInitializer.kt:31)
-	at org.example.main.MainKt.main(Main.kt:32)
-	at org.example.main.MainKt.main(Main.kt)
-Caused by: org.h2.jdbc.JdbcSQLInvalidAuthorizationSpecException: Wrong user name or password [28000-224]
-	at org.h2.message.DbException.getJdbcSQLException(DbException.java:522)
-	at org.h2.message.DbException.getJdbcSQLException(DbException.java:489)
-	... 15 more
-2025-10-13 00:42:22.968654+03:00 database: wrong user or password; user: ""
-org.h2.message.DbException: Wrong user name or password [28000-224]
-	at org.h2.message.DbException.get(DbException.java:223)
-	at org.h2.message.DbException.get(DbException.java:199)
-	at org.h2.message.DbException.get(DbException.java:188)
-	at org.h2.engine.Engine.openSession(Engine.java:154)
-	at org.h2.engine.Engine.openSession(Engine.java:222)
-	at org.h2.engine.Engine.createSession(Engine.java:201)
-	at org.h2.engine.SessionRemote.connectEmbeddedOrServer(SessionRemote.java:343)
-	at org.h2.jdbc.JdbcConnection.<init>(JdbcConnection.java:125)
-	at org.h2.Driver.connect(Driver.java:59)
-	at java.sql/java.sql.DriverManager.getConnection(DriverManager.java:683)
-	at java.sql/java.sql.DriverManager.getConnection(DriverManager.java:191)
-	at org.example.db.JdbcConnector.getConnection(JdbcConnector.kt:23)
-	at org.example.db.DataInitializer.insertInitialData(DataInitializer.kt:31)
-	at org.example.main.MainKt.main(Main.kt:32)
+	at org.example.db.ConnectionPool.createConnection(ConnectionPool.kt:50)
+	at org.example.db.ConnectionPool.<clinit>(ConnectionPool.kt:32)
+	at org.example.main.MainKt.main(Main.kt:37)
 	at org.example.main.MainKt.main(Main.kt)
 Caused by: org.h2.jdbc.JdbcSQLInvalidAuthorizationSpecException: Wrong user name or password [28000-224]
 	at org.h2.message.DbException.getJdbcSQLException(DbException.java:522)
