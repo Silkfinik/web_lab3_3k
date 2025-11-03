@@ -9,6 +9,7 @@ import org.example.dao.impl.SubscriberDaoImpl
 import org.example.db.ConnectionPool
 import org.example.db.DataInitializer
 import org.example.db.DatabaseManager
+import org.example.db.JpaManager
 import org.example.entity.Subscriber
 import org.example.exception.DataAccessException
 import org.example.exception.DuplicateEntryException
@@ -33,40 +34,45 @@ fun main() {
         serviceDao = ServiceDaoImpl()
         invoiceDao = InvoiceDaoImpl()
 
-        logger.debug("Forcing Connection Pool initialization...")
-        val conn = ConnectionPool.getConnection()
-        ConnectionPool.releaseConnection(conn)
-        logger.debug("Connection Pool initialized successfully.")
+        logger.debug("Forcing JPA Manager initialization...")
+        // ❗️ ИЗМЕНЕНИЕ: Инициализируем JpaManager вместо ConnectionPool
+        val em = JpaManager.getEntityManager()
+        em.close()
+        logger.debug("JPA Manager initialized successfully.")
 
     } catch (e: Throwable) {
-        logger.error("FATAL: Failed to initialize application (Connection Pool failed)", e)
+        // ❗️ ИЗМЕНЕНИЕ: Обновляем сообщение об ошибке
+        logger.error("FATAL: Failed to initialize application (JPA Manager failed)", e)
         println("КРИТИЧЕСКАЯ ОШИБКА ЗАПУСКА: ${e.message}")
-        println("Проверьте database.properties или доступность БД.")
+        println("Проверьте persistence.xml или доступность БД.")
         exitProcess(1)
     }
 
     println("Добро пожаловать в Telecom App!")
     println("Выберите режим работы:")
-    println("  1. Начать с чистой базой данных (все изменения будут удалены)")
+    println("  1. Начать с чистой базой данных (заполнить тестовыми данными)")
     println("  2. Продолжить работу с существующими данными")
     print("Ваш выбор [1 или 2]: ")
 
     try {
         when (readlnOrNull()) {
             "1" -> {
-                println("\nИнициализация чистой базы данных...")
+                println("\nОчистка и заполнение базы данных тестовыми данными...")
                 try {
-                    val dbFile = File("telecom.mv.db")
-                    if (dbFile.exists()) {
-                        dbFile.delete()
-                    }
-                    DatabaseManager.initDatabase()
+                    // ❗️ ИЗМЕНЕНИЕ:
+                    // УДАЛЯЕМ: ручное удаление файла .db
+                    // УДАЛЯЕМ: DatabaseManager.initDatabase()
+
+                    // Просто вызываем DataInitializer, который теперь
+                    // будет использовать JPA для очистки и вставки данных
                     DataInitializer.insertInitialData()
-                    logger.info("New database created and initialized.")
-                    println("Новая база данных успешно создана и заполнена тестовыми данными.")
+
+                    logger.info("Database re-initialized with test data.")
+                    println("База данных успешно заполнена тестовыми данными.")
+
                 } catch (e: Exception) {
-                    logger.error("FATAL: Error during database setup", e)
-                    println("FATAL: Ошибка при инициализации базы данных: ${e.message}")
+                    logger.error("FATAL: Error during data initialization", e)
+                    println("FATAL: Ошибка при заполнении базы данных: ${e.message}")
                     return
                 }
             }
@@ -270,7 +276,10 @@ private fun showUnpaidInvoices() {
     } else {
         println("Список неоплаченных счетов:")
         invoices.forEach {
-            println("  - Счет №${it.id} (абонент ID ${it.subscriberId}) на сумму ${it.amount} руб.")
+            // ❗️ ИЗМЕНЕНИЕ ЗДЕСЬ:
+            // Было: it.subscriber.id
+            // Стало: it.subscriber?.id (используем safe call)
+            println("  - Счет №${it.id} (абонент ID ${it.subscriber?.id}) на сумму ${it.amount} руб.")
         }
     }
 }
@@ -279,6 +288,8 @@ private fun connectServiceToSubscriber() {
     println("Выберите абонента для подключения услуги:")
     showAllSubscribers()
     print("Введите ID абонента: ")
+
+    // Убедитесь, что эта строка написана именно так:
     val subscriberId = readlnOrNull()?.toIntOrNull() ?: return
 
     println("\nВыберите услугу для подключения:")
@@ -286,6 +297,7 @@ private fun connectServiceToSubscriber() {
     print("Введите ID услуги: ")
     val serviceId = readlnOrNull()?.toIntOrNull() ?: return
 
+    // Эта строка вызывает DAO
     serviceDao.linkServiceToSubscriber(subscriberId, serviceId)
 
     println("Услуга успешно подключена абоненту.")

@@ -1,127 +1,101 @@
 package org.example.dao.impl
 
 import org.example.dao.api.InvoiceDao
-import org.example.db.ConnectionPool
+import org.example.db.JpaManager
 import org.example.entity.Invoice
-import java.sql.Connection
 import org.slf4j.LoggerFactory
-import java.sql.SQLException
 import org.example.exception.*
+import jakarta.persistence.EntityManager
+import jakarta.persistence.PersistenceException
 
 class InvoiceDaoImpl : InvoiceDao {
 
     private val logger = LoggerFactory.getLogger(InvoiceDaoImpl::class.java)
 
-    private companion object {
-        const val H2_DUPLICATE_KEY_CODE = 23505
-        const val H2_INTEGRITY_VIOLATION_CODE = 23503
-
-        const val FIND_BY_SUBSCRIBER_ID = "SELECT * FROM invoices WHERE subscriber_id = ?"
-        const val PAY_INVOICE = "UPDATE invoices SET is_paid = TRUE WHERE id = ?"
-        const val FIND_SUBSCRIBER_ID_BY_INVOICE_ID = "SELECT subscriber_id FROM invoices WHERE id = ?"
-        const val FIND_UNPAID = "SELECT * FROM invoices WHERE is_paid = FALSE"
+    /**
+     * Вспомогательная функция для выполнения кода внутри транзакции JPA
+     */
+    private fun <T> executeInTransaction(block: (em: EntityManager) -> T): T {
+        val em = JpaManager.getEntityManager()
+        try {
+            em.transaction.begin()
+            val result = block(em)
+            em.transaction.commit()
+            return result
+        } catch (e: Exception) {
+            em.transaction.rollback()
+            logger.error("JPA transaction failed", e)
+            val exceptionToThrow = when (e) {
+                is PersistenceException -> DataAccessException("Ошибка доступа к данным JPA.", e)
+                else -> e
+            }
+            throw exceptionToThrow
+        } finally {
+            em.close()
+        }
     }
 
     override fun findBySubscriberId(subscriberId: Int): List<Invoice> {
-        val invoices = mutableListOf<Invoice>()
-        var connection: Connection? = null
+        val em = JpaManager.getEntityManager()
         try {
-            connection = ConnectionPool.getConnection()
-            connection.prepareStatement(FIND_BY_SUBSCRIBER_ID).use { statement ->
-                statement.setInt(1, subscriberId)
-                val rs = statement.executeQuery()
-                while (rs.next()) {
-                    invoices.add(
-                        Invoice(
-                            id = rs.getInt("id"),
-                            subscriberId = rs.getInt("subscriber_id"),
-                            amount = rs.getDouble("amount"),
-                            issueDate = rs.getDate("issue_date").toLocalDate(),
-                            isPaid = rs.getBoolean("is_paid")
-                        )
-                    )
-                }
-            }
-        } catch (e: SQLException) {
+            // "Invoice.findBySubscriberId"
+            return em.createNamedQuery("Invoice.findBySubscriberId", Invoice::class.java)
+                .setParameter("subscriberId", subscriberId)
+                .resultList
+        } catch (e: Exception) {
             logger.error("Failed to find invoices for subscriber $subscriberId", e)
             throw DataAccessException("Ошибка при поиске счетов абонента.", e)
         } finally {
-            ConnectionPool.releaseConnection(connection)
+            em.close()
         }
-        return invoices
     }
 
     override fun pay(invoiceId: Int): Boolean {
-        var connection: Connection? = null
-        try {
-            connection = ConnectionPool.getConnection()
-            connection.prepareStatement(PAY_INVOICE).use { statement ->
-                statement.setInt(1, invoiceId)
-                val rowsAffected = statement.executeUpdate()
+        return executeInTransaction { em ->
+            // "Invoice.pay"
+            val rowsAffected = em.createNamedQuery("Invoice.pay")
+                .setParameter("id", invoiceId)
+                .executeUpdate()
 
-                if (rowsAffected == 0) {
-                    logger.warn("Payment failed. Invoice with id $invoiceId not found.")
-                    throw EntryNotFoundException("Счет с ID $invoiceId не найден.")
-                }
-
-                logger.info("Invoice $invoiceId was paid successfully.")
-                return true
+            if (rowsAffected == 0) {
+                logger.warn("Payment failed. Invoice with id $invoiceId not found.")
+                throw EntryNotFoundException("Счет с ID $invoiceId не найден.")
             }
-        } catch (e: SQLException) {
-            logger.error("Failed to pay invoice $invoiceId", e)
-            throw DataAccessException("Ошибка при оплате счета.", e)
-        } finally {
-            ConnectionPool.releaseConnection(connection)
+
+            logger.info("Invoice $invoiceId was paid successfully.")
+            return@executeInTransaction true
         }
     }
 
     override fun findSubscriberIdByInvoiceId(invoiceId: Int): Int? {
-        var connection: Connection? = null
+        val em = JpaManager.getEntityManager()
         try {
-            connection = ConnectionPool.getConnection()
-            connection.prepareStatement(FIND_SUBSCRIBER_ID_BY_INVOICE_ID).use { statement ->
-                statement.setInt(1, invoiceId)
-                val rs = statement.executeQuery()
-                if (rs.next()) {
-                    return rs.getInt("subscriber_id")
-                } else {
-                    logger.warn("Subscriber ID not found for invoice $invoiceId.")
-                    throw EntryNotFoundException("Счет с ID $invoiceId не найден.", null)
-                }
-            }
-        } catch (e: SQLException) {
+            // "Invoice.findSubscriberIdById"
+            return em.createNamedQuery("Invoice.findSubscriberIdById", Int::class.java)
+                .setParameter("id", invoiceId)
+                .singleResult
+        } catch (e: jakarta.persistence.NoResultException) {
+            logger.warn("Subscriber ID not found for invoice $invoiceId.")
+            throw EntryNotFoundException("Счет с ID $invoiceId не найден.", e)
+        } catch (e: Exception) {
             logger.error("Failed to find subscriber by invoice $invoiceId", e)
             throw DataAccessException("Ошибка при поиске счета.", e)
         } finally {
-            ConnectionPool.releaseConnection(connection)
+            em.close()
         }
     }
 
     override fun findUnpaid(): List<Invoice> {
-        val invoices = mutableListOf<Invoice>()
-        var connection: Connection? = null
+        val em = JpaManager.getEntityManager()
         try {
-            connection = ConnectionPool.getConnection()
-            connection.prepareStatement(FIND_UNPAID).use { statement ->
-                val rs = statement.executeQuery()
-                while (rs.next()) {
-                    invoices.add(
-                        Invoice(
-                            id = rs.getInt("id"),
-                            subscriberId = rs.getInt("subscriber_id"),
-                            amount = rs.getDouble("amount"),
-                            issueDate = rs.getDate("issue_date").toLocalDate(),
-                            isPaid = rs.getBoolean("is_paid")
-                        )
-                    )
-                }
-            }
-        } catch (e: SQLException) {
+            // "Invoice.findUnpaid"
+            return em.createNamedQuery("Invoice.findUnpaid", Invoice::class.java)
+                .resultList
+        } catch (e: Exception) {
             logger.error("Failed to find unpaid invoices", e)
             throw DataAccessException("Ошибка при получении списка неоплаченных счетов.", e)
         } finally {
-            ConnectionPool.releaseConnection(connection)
+            em.close()
         }
-        return invoices
     }
 }

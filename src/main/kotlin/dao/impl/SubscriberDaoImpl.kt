@@ -1,124 +1,108 @@
 package org.example.dao.impl
 
 import org.example.dao.api.SubscriberDao
-import org.example.db.ConnectionPool
+import org.example.db.JpaManager
 import org.example.entity.Subscriber
-import java.sql.Connection
-import java.sql.Statement
 import org.slf4j.LoggerFactory
-import java.sql.SQLException
 import org.example.exception.*
+import jakarta.persistence.EntityManager
+import jakarta.persistence.PersistenceException
 
 class SubscriberDaoImpl : SubscriberDao {
 
     private val logger = LoggerFactory.getLogger(SubscriberDaoImpl::class.java)
 
-    private companion object {
-        const val H2_DUPLICATE_KEY_CODE = 23505
+    /**
+     * Вспомогательная функция для выполнения кода внутри транзакции JPA
+     */
+    private fun <T> executeInTransaction(block: (em: EntityManager) -> T): T {
+        val em = JpaManager.getEntityManager()
+        try {
+            em.transaction.begin()
+            val result = block(em)
+            em.transaction.commit()
+            return result
+        } catch (e: Exception) {
+            em.transaction.rollback()
+            logger.error("JPA transaction failed", e)
 
-        const val FIND_BY_ID = "SELECT * FROM subscribers WHERE id = ?"
-        const val FIND_ALL = "SELECT * FROM subscribers"
-        const val BLOCK_SUBSCRIBER = "UPDATE subscribers SET is_blocked = TRUE WHERE id = ?"
-        const val ADD_SUBSCRIBER = "INSERT INTO subscribers(name, phone_number) VALUES (?, ?)"
+            // ИСПРАВЛЕНИЕ 4: Оборачиваем и выбрасываем исключение
+            // так, чтобы компилятор был уверен, что функция завершится.
+            val exceptionToThrow = when (e) {
+                is PersistenceException -> DataAccessException("Ошибка доступа к данным JPA.", e)
+                else -> e
+            }
+            throw exceptionToThrow
+
+        } finally {
+            em.close()
+        }
     }
 
     override fun findById(id: Int): Subscriber? {
-        var connection: Connection? = null
+        val em = JpaManager.getEntityManager()
+
+        // ИСПРАВЛЕНИЕ 3: Выносим объявление переменной
+        val subscriber: Subscriber?
+
         try {
-            connection = ConnectionPool.getConnection()
-            connection.prepareStatement(FIND_BY_ID).use { statement ->
-                statement.setInt(1, id)
-                val rs = statement.executeQuery()
-                if (rs.next()) {
-                    return Subscriber(
-                        id = rs.getInt("id"),
-                        name = rs.getString("name"),
-                        phoneNumber = rs.getString("phone_number"),
-                        balance = rs.getDouble("balance"),
-                        isBlocked = rs.getBoolean("is_blocked")
-                    )
-                }
-            }
-        } catch (e: SQLException) {
+            subscriber = em.createNamedQuery("Subscriber.findById", Subscriber::class.java)
+                .setParameter("id", id)
+                .singleResult
+        } catch (_: jakarta.persistence.NoResultException) {
+            // ИСПРАВЛЕНИЕ 2: Меняем 'e' на '_', так как параметр не используется
+            return null
+        } catch (e: Exception) {
             logger.error("Failed to find subscriber by id $id", e)
             throw DataAccessException("Ошибка при поиске абонента.", e)
         } finally {
-            ConnectionPool.releaseConnection(connection)
+            em.close()
         }
-        return null
+
+        // ИСПРАВЛЕНИЕ 3: 'return' вынесен из 'try'
+        return subscriber
     }
 
     override fun findAll(): List<Subscriber> {
-        var connection: Connection? = null
-        val subscribers = mutableListOf<Subscriber>()
+        val em = JpaManager.getEntityManager()
         try {
-            connection = ConnectionPool.getConnection()
-            connection.prepareStatement(FIND_ALL).use { statement ->
-                val rs = statement.executeQuery()
-                while (rs.next()) {
-                    subscribers.add(
-                        Subscriber(
-                            id = rs.getInt("id"),
-                            name = rs.getString("name"),
-                            phoneNumber = rs.getString("phone_number"),
-                            balance = rs.getDouble("balance"),
-                            isBlocked = rs.getBoolean("is_blocked")
-                        )
-                    )
-                }
-            }
-        } catch (e: SQLException) {
+            return em.createNamedQuery("Subscriber.findAll", Subscriber::class.java)
+                .resultList
+        } catch (e: Exception) {
             logger.error("Failed to find all subscribers", e)
             throw DataAccessException("Ошибка при получении списка абонентов.", e)
         } finally {
-            ConnectionPool.releaseConnection(connection)
+            em.close()
         }
-        return subscribers
     }
 
     override fun block(subscriberId: Int) {
-        var connection: Connection? = null
-        try {
-            connection = ConnectionPool.getConnection()
-            connection.prepareStatement(BLOCK_SUBSCRIBER).use { statement ->
-                statement.setInt(1, subscriberId)
-                statement.executeUpdate()
-                logger.info("Subscriber $subscriberId was blocked.")
+        executeInTransaction { em ->
+            val updatedCount = em.createNamedQuery("Subscriber.block")
+                .setParameter("id", subscriberId)
+                .executeUpdate()
+
+            if (updatedCount == 0) {
+                throw EntryNotFoundException("Абонент с ID $subscriberId не найден.")
             }
-        } catch (e: SQLException) {
-            logger.error("Failed to block subscriber $subscriberId", e)
-            throw DataAccessException("Ошибка при блокировке абонента.", e)
-        } finally {
-            ConnectionPool.releaseConnection(connection)
+            logger.info("Subscriber $subscriberId was blocked.")
         }
     }
 
     override fun add(subscriber: Subscriber): Subscriber {
-        var connection: Connection? = null
-        try {
-            connection = ConnectionPool.getConnection()
-            connection.prepareStatement(ADD_SUBSCRIBER, Statement.RETURN_GENERATED_KEYS).use { statement ->
-                statement.setString(1, subscriber.name)
-                statement.setString(2, subscriber.phoneNumber)
-                statement.executeUpdate()
-
-                val generatedKeys = statement.generatedKeys
-                if (generatedKeys.next()) {
-                    val id = generatedKeys.getInt(1)
-                    logger.info("New subscriber created with id $id")
-                    return subscriber.copy(id = id)
-                } else {
-                    throw DataAccessException("Не удалось создать абонента, не получен ID.")
+        // ИСПРАВЛЕНИЕ 1: Добавлен 'return'
+        return executeInTransaction { em ->
+            try {
+                em.persist(subscriber)
+                logger.info("New subscriber created with id ${subscriber.id}")
+                return@executeInTransaction subscriber
+            } catch (e: PersistenceException) {
+                // Проверяем на дубликат (например, по номеру телефона)
+                if (e.message?.contains("UNIQUE_") == true) {
+                    throw DuplicateEntryException("Абонент с номером ${subscriber.phoneNumber} уже существует.", e)
                 }
+                throw DataAccessException("Ошибка при добавлении абонента.", e)
             }
-        } catch (e: SQLException) {
-            logger.error("Failed to add subscriber $subscriber", e)
-            if (e.errorCode == H2_DUPLICATE_KEY_CODE) {
-                throw DuplicateEntryException("Абонент с номером ${subscriber.phoneNumber} уже существует.", e)
-            }
-            throw DataAccessException("Ошибка при добавлении абонента.", e)
-        } finally {
-            ConnectionPool.releaseConnection(connection)
         }
     }
 }

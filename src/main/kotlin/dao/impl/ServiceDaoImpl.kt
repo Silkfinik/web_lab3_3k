@@ -1,106 +1,119 @@
 package org.example.dao.impl
 
 import org.example.dao.api.ServiceDao
-import org.example.db.ConnectionPool
+import org.example.db.JpaManager
 import org.example.entity.Service
-import java.sql.Connection
+import org.example.entity.Subscriber
 import org.slf4j.LoggerFactory
 import java.sql.SQLException
 import org.example.exception.*
+import jakarta.persistence.EntityManager
+import jakarta.persistence.PersistenceException
 
 class ServiceDaoImpl : ServiceDao {
 
     private val logger = LoggerFactory.getLogger(ServiceDaoImpl::class.java)
 
+    // Коды ошибок H2 из вашего старого DAO
     private companion object {
         const val H2_DUPLICATE_KEY_CODE = 23505
         const val H2_INTEGRITY_VIOLATION_CODE = 23503
+    }
 
-        const val FIND_ALL = "SELECT * FROM services"
-        const val FIND_BY_SUBSCRIBER_ID = """
-            SELECT s.id, s.name, s.monthly_fee 
-            FROM services s
-            JOIN subscriber_services ss ON s.id = ss.service_id
-            WHERE ss.subscriber_id = ?
-        """
-        const val LINK_SERVICE = "INSERT INTO subscriber_services(subscriber_id, service_id) VALUES (?, ?)"
+    /**
+     * Вспомогательная функция для выполнения кода внутри транзакции JPA
+     */
+    private fun <T> executeInTransaction(block: (em: EntityManager) -> T): T {
+        val em = JpaManager.getEntityManager()
+        try {
+            em.transaction.begin()
+            val result = block(em)
+            em.transaction.commit()
+            return result
+        } catch (e: Exception) {
+            em.transaction.rollback()
+            logger.error("JPA transaction failed", e)
+            val exceptionToThrow = when (e) {
+                is PersistenceException -> DataAccessException("Ошибка доступа к данным JPA.", e)
+                else -> e
+            }
+            throw exceptionToThrow
+        } finally {
+            em.close()
+        }
     }
 
     override fun findAll(): List<Service> {
-        val services = mutableListOf<Service>()
-        var connection: Connection? = null
+        val em = JpaManager.getEntityManager()
         try {
-            connection = ConnectionPool.getConnection()
-            connection.prepareStatement(FIND_ALL).use { statement ->
-                val rs = statement.executeQuery()
-                while (rs.next()) {
-                    services.add(
-                        Service(
-                            id = rs.getInt("id"),
-                            name = rs.getString("name"),
-                            monthlyFee = rs.getDouble("monthly_fee")
-                        )
-                    )
-                }
-            }
-        } catch (e: SQLException) {
+            // Используем NamedQuery "Service.findAll" из Service.kt
+            return em.createNamedQuery("Service.findAll", Service::class.java)
+                .resultList
+        } catch (e: Exception) {
             logger.error("Failed to find all services", e)
             throw DataAccessException("Ошибка при получении списка услуг", e)
         } finally {
-            ConnectionPool.releaseConnection(connection)
+            em.close()
         }
-        return services
     }
 
     override fun findBySubscriberId(subscriberId: Int): List<Service> {
-        val services = mutableListOf<Service>()
-        var connection: Connection? = null
+        val em = JpaManager.getEntityManager()
         try {
-            connection = ConnectionPool.getConnection()
-            connection.prepareStatement(FIND_BY_SUBSCRIBER_ID).use { statement ->
-                statement.setInt(1, subscriberId)
-                val rs = statement.executeQuery()
-                while (rs.next()) {
-                    services.add(
-                        Service(
-                            id = rs.getInt("id"),
-                            name = rs.getString("name"),
-                            monthlyFee = rs.getDouble("monthly_fee")
-                        )
-                    )
-                }
-            }
-        } catch (e: SQLException) {
+            // Используем NamedQuery "Service.findBySubscriberId" из Service.kt
+            return em.createNamedQuery("Service.findBySubscriberId", Service::class.java)
+                .setParameter("subscriberId", subscriberId)
+                .resultList
+        } catch (e: Exception) {
             logger.error("Failed to find services for subscriber $subscriberId", e)
             throw DataAccessException("Ошибка при поиске услуг абонента.", e)
         } finally {
-            ConnectionPool.releaseConnection(connection)
+            em.close()
         }
-        return services
     }
 
     override fun linkServiceToSubscriber(subscriberId: Int, serviceId: Int) {
-        var connection: Connection? = null
-        try {
-            connection = ConnectionPool.getConnection()
-            connection.prepareStatement(LINK_SERVICE).use { statement ->
-                statement.setInt(1, subscriberId)
-                statement.setInt(2, serviceId)
-                statement.executeUpdate()
+        executeInTransaction { em ->
+            try {
+                // Находим обе сущности, которыми хотим управлять
+                val subscriber = em.find(Subscriber::class.java, subscriberId)
+                val service = em.find(Service::class.java, serviceId)
+
+                if (subscriber == null) {
+                    throw EntryNotFoundException("Абонент с ID $subscriberId не найден.")
+                }
+                if (service == null) {
+                    throw EntryNotFoundException("Услуга с ID $serviceId не найдена.")
+                }
+
+                // Так как связь @ManyToMany управляется со стороны Subscriber,
+                // мы просто добавляем услугу в его коллекцию
+                if (subscriber.services.contains(service)) {
+                    throw DuplicateEntryException("Эта услуга уже подключена абоненту.")
+                }
+
+                subscriber.services.add(service)
+
+                // Сохраняем изменения
+                em.merge(subscriber)
+
                 logger.info("Service $serviceId linked to subscriber $subscriberId")
+
+            } catch (e: PersistenceException) {
+                logger.error("Failed to link service $serviceId to subscriber $subscriberId", e)
+                // Обрабатываем ошибки по аналогии со старым кодом
+                // (хотя JPA делает часть проверок за нас)
+                val cause = e.cause
+                if (cause is SQLException) {
+                    when (cause.errorCode) {
+                        H2_DUPLICATE_KEY_CODE ->
+                            throw DuplicateEntryException("Эта услуга уже подключена абоненту.", e)
+                        H2_INTEGRITY_VIOLATION_CODE ->
+                            throw EntryNotFoundException("Абонент (ID $subscriberId) или услуга (ID $serviceId) не найдены.", e)
+                    }
+                }
+                throw DataAccessException("Ошибка при подключении услуги.", e)
             }
-        } catch (e: SQLException) {
-            logger.error("Failed to link service $serviceId to subscriber $subscriberId", e)
-            when (e.errorCode) {
-                H2_DUPLICATE_KEY_CODE ->
-                    throw DuplicateEntryException("Эта услуга уже подключена абоненту.", e)
-                H2_INTEGRITY_VIOLATION_CODE ->
-                    throw EntryNotFoundException("Абонент (ID $subscriberId) или услуга (ID $serviceId) не найдены.", e)
-                else ->
-                    throw DataAccessException("Ошибка при подключении услуги.", e)
-            }
-        } finally {
-            ConnectionPool.releaseConnection(connection)
         }
     }
 }
