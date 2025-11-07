@@ -3,6 +3,8 @@ package org.example.dao.impl
 import org.example.dao.api.InvoiceDao
 import org.example.db.JpaManager
 import org.example.entity.Invoice
+import org.example.entity.Invoice_
+import org.example.entity.Subscriber_
 import org.slf4j.LoggerFactory
 import org.example.exception.*
 import jakarta.persistence.EntityManager
@@ -12,9 +14,6 @@ class InvoiceDaoImpl : InvoiceDao {
 
     private val logger = LoggerFactory.getLogger(InvoiceDaoImpl::class.java)
 
-    /**
-     * Вспомогательная функция для выполнения кода внутри транзакции JPA
-     */
     private fun <T> executeInTransaction(block: (em: EntityManager) -> T): T {
         val em = JpaManager.getEntityManager()
         try {
@@ -40,9 +39,14 @@ class InvoiceDaoImpl : InvoiceDao {
     override fun findBySubscriberId(subscriberId: Int): List<Invoice> {
         val em = JpaManager.getEntityManager()
         try {
-            return em.createNamedQuery("Invoice.findBySubscriberId", Invoice::class.java)
-                .setParameter("subscriberId", subscriberId)
-                .resultList
+            val cb = em.criteriaBuilder
+            val cq = cb.createQuery(Invoice::class.java)
+            val root = cq.from(Invoice::class.java)
+
+            cq.where(cb.equal(root.get(Invoice_.subscriber).get(Subscriber_.id), subscriberId))
+
+            return em.createQuery(cq).resultList
+
         } catch (e: Exception) {
             logger.error("Failed to find invoices for subscriber $subscriberId", e)
             throw DataAccessException("Ошибка при поиске счетов абонента.", e)
@@ -53,9 +57,16 @@ class InvoiceDaoImpl : InvoiceDao {
 
     override fun pay(invoiceId: Int): Boolean {
         return executeInTransaction { em ->
-            val rowsAffected = em.createNamedQuery("Invoice.pay")
-                .setParameter("id", invoiceId)
-                .executeUpdate()
+            val cb = em.criteriaBuilder
+
+            val cu = cb.createCriteriaUpdate(Invoice::class.java)
+            val root = cu.from(Invoice::class.java)
+
+            cu.set(root.get(Invoice_.isPaid), true)
+
+            cu.where(cb.equal(root.get(Invoice_.id), invoiceId))
+
+            val rowsAffected = em.createQuery(cu).executeUpdate()
 
             if (rowsAffected == 0) {
                 logger.warn("Payment failed. Invoice with id $invoiceId not found.")
@@ -70,9 +81,16 @@ class InvoiceDaoImpl : InvoiceDao {
     override fun findSubscriberIdByInvoiceId(invoiceId: Int): Int? {
         val em = JpaManager.getEntityManager()
         try {
-            return em.createNamedQuery("Invoice.findSubscriberIdById", Int::class.java)
-                .setParameter("id", invoiceId)
-                .singleResult
+            val cb = em.criteriaBuilder
+            val cq = cb.createQuery(Int::class.java)
+            val root = cq.from(Invoice::class.java)
+
+            cq.select(root.get(Invoice_.subscriber).get(Subscriber_.id))
+
+            cq.where(cb.equal(root.get(Invoice_.id), invoiceId))
+
+            return em.createQuery(cq).singleResult
+
         } catch (e: jakarta.persistence.NoResultException) {
             logger.warn("Subscriber ID not found for invoice $invoiceId.")
             throw EntryNotFoundException("Счет с ID $invoiceId не найден.", e)
@@ -87,8 +105,14 @@ class InvoiceDaoImpl : InvoiceDao {
     override fun findUnpaid(): List<Invoice> {
         val em = JpaManager.getEntityManager()
         try {
-            return em.createNamedQuery("Invoice.findUnpaid", Invoice::class.java)
-                .resultList
+            val cb = em.criteriaBuilder
+            val cq = cb.createQuery(Invoice::class.java)
+            val root = cq.from(Invoice::class.java)
+
+            cq.where(cb.equal(root.get(Invoice_.isPaid), false))
+
+            return em.createQuery(cq).resultList
+
         } catch (e: Exception) {
             logger.error("Failed to find unpaid invoices", e)
             throw DataAccessException("Ошибка при получении списка неоплаченных счетов.", e)

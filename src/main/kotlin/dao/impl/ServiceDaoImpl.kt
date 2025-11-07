@@ -3,9 +3,10 @@ package org.example.dao.impl
 import org.example.dao.api.ServiceDao
 import org.example.db.JpaManager
 import org.example.entity.Service
+import org.example.entity.Service_
 import org.example.entity.Subscriber
+import org.example.entity.Subscriber_
 import org.slf4j.LoggerFactory
-import java.sql.SQLException
 import org.example.exception.*
 import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceException
@@ -14,14 +15,6 @@ class ServiceDaoImpl : ServiceDao {
 
     private val logger = LoggerFactory.getLogger(ServiceDaoImpl::class.java)
 
-    private companion object {
-        const val H2_DUPLICATE_KEY_CODE = 23505
-        const val H2_INTEGRITY_VIOLATION_CODE = 23503
-    }
-
-    /**
-     * Вспомогательная функция для выполнения кода внутри транзакции JPA
-     */
     private fun <T> executeInTransaction(block: (em: EntityManager) -> T): T {
         val em = JpaManager.getEntityManager()
         try {
@@ -47,8 +40,12 @@ class ServiceDaoImpl : ServiceDao {
     override fun findAll(): List<Service> {
         val em = JpaManager.getEntityManager()
         try {
-            return em.createNamedQuery("Service.findAll", Service::class.java)
-                .resultList
+            val cb = em.criteriaBuilder
+            val cq = cb.createQuery(Service::class.java)
+            val root = cq.from(Service::class.java)
+            cq.select(root) // SELECT * FROM Service
+
+            return em.createQuery(cq).resultList
         } catch (e: Exception) {
             logger.error("Failed to find all services", e)
             throw DataAccessException("Ошибка при получении списка услуг", e)
@@ -60,14 +57,34 @@ class ServiceDaoImpl : ServiceDao {
     override fun findBySubscriberId(subscriberId: Int): List<Service> {
         val em = JpaManager.getEntityManager()
         try {
-            return em.createNamedQuery("Service.findBySubscriberId", Service::class.java)
-                .setParameter("subscriberId", subscriberId)
-                .resultList
+            val cb = em.criteriaBuilder
+            val cq = cb.createQuery(Service::class.java)
+            val root = cq.from(Service::class.java)
+
+            // Создаем JOIN (FROM Service s JOIN s.subscribers sub)
+            val subscribersJoin = root.join(Service_.subscribers)
+
+            // Добавляем WHERE (WHERE sub.id = :subscriberId)
+            cq.where(cb.equal(subscribersJoin.get(Subscriber_.id), subscriberId))
+
+            return em.createQuery(cq).resultList
+
         } catch (e: Exception) {
             logger.error("Failed to find services for subscriber $subscriberId", e)
             throw DataAccessException("Ошибка при поиске услуг абонента.", e)
         } finally {
             em.close()
+        }
+    }
+
+    override fun add(service: Service): Service {
+        return executeInTransaction { em ->
+            try {
+                em.persist(service)
+                return@executeInTransaction service
+            } catch (e: PersistenceException) {
+                throw DataAccessException("Ошибка при добавлении услуги.", e)
+            }
         }
     }
 
@@ -89,41 +106,27 @@ class ServiceDaoImpl : ServiceDao {
                 }
 
                 subscriber.services.add(service)
-
                 em.merge(subscriber)
 
                 logger.info("Service $serviceId linked to subscriber $subscriberId")
 
             } catch (e: PersistenceException) {
-                logger.error("Failed to link service $serviceId to subscriber $subscriberId", e)
-                val cause = e.cause
-                if (cause is SQLException) {
-                    when (cause.errorCode) {
-                        H2_DUPLICATE_KEY_CODE ->
-                            throw DuplicateEntryException("Эта услуга уже подключена абоненту.", e)
-                        H2_INTEGRITY_VIOLATION_CODE ->
-                            throw EntryNotFoundException("Абонент (ID $subscriberId) или услуга (ID $serviceId) не найдены.", e)
-                    }
-                }
                 throw DataAccessException("Ошибка при подключении услуги.", e)
-            }
-        }
-    }
-
-    override fun add(service: Service): Service {
-        return executeInTransaction { em ->
-            try {
-                em.persist(service)
-                return@executeInTransaction service
-            } catch (e: PersistenceException) {
-                throw DataAccessException("Ошибка при добавлении услуги.", e)
             }
         }
     }
 
     override fun deleteAll() {
         executeInTransaction { em ->
-            em.createNamedQuery("Service.deleteAll").executeUpdate()
+            val cb = em.criteriaBuilder
+            val cq = cb.createQuery(Service::class.java)
+            val root = cq.from(Service::class.java)
+            cq.select(root)
+            val allServices = em.createQuery(cq).resultList
+
+            for (service in allServices) {
+                em.remove(service)
+            }
         }
     }
 }

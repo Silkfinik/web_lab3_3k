@@ -1,5 +1,12 @@
 plugins {
     kotlin("jvm") version "2.2.20"
+    kotlin("kapt") version "2.2.20"
+}
+
+kapt {
+    arguments {
+        arg("eclipselink.persistencexml", "src/main/resources/META-INF/persistence.xml")
+    }
 }
 
 group = "org.example"
@@ -21,8 +28,10 @@ dependencies {
     implementation("ch.qos.logback:logback-classic:1.4.11")
 
     // JPA
-    implementation("org.eclipse.persistence:eclipselink:5.0.0-B01")
-    implementation("jakarta.persistence:jakarta.persistence-api:3.2.0-B02")
+    implementation("org.eclipse.persistence:eclipselink:4.0.2")
+    implementation("jakarta.persistence:jakarta.persistence-api:3.1.0")
+
+    kapt("org.eclipse.persistence:org.eclipse.persistence.jpa.modelgen.processor:3.0.4")
 }
 
 tasks.test {

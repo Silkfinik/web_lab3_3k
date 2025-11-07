@@ -3,6 +3,7 @@ package org.example.dao.impl
 import org.example.dao.api.SubscriberDao
 import org.example.db.JpaManager
 import org.example.entity.Subscriber
+import org.example.entity.Subscriber_
 import org.slf4j.LoggerFactory
 import org.example.exception.*
 import jakarta.persistence.EntityManager
@@ -12,9 +13,6 @@ class SubscriberDaoImpl : SubscriberDao {
 
     private val logger = LoggerFactory.getLogger(SubscriberDaoImpl::class.java)
 
-    /**
-     * Вспомогательная функция для выполнения кода внутри транзакции JPA
-     */
     private fun <T> executeInTransaction(block: (em: EntityManager) -> T): T {
         val em = JpaManager.getEntityManager()
         try {
@@ -39,13 +37,15 @@ class SubscriberDaoImpl : SubscriberDao {
 
     override fun findById(id: Int): Subscriber? {
         val em = JpaManager.getEntityManager()
-
-        val subscriber: Subscriber?
-
         try {
-            subscriber = em.createNamedQuery("Subscriber.findById", Subscriber::class.java)
-                .setParameter("id", id)
-                .singleResult
+            val cb = em.criteriaBuilder
+            val cq = cb.createQuery(Subscriber::class.java)
+            val root = cq.from(Subscriber::class.java)
+
+            cq.where(cb.equal(root.get(Subscriber_.id), id))
+
+            return em.createQuery(cq).singleResult
+
         } catch (_: jakarta.persistence.NoResultException) {
             return null
         } catch (e: Exception) {
@@ -54,15 +54,18 @@ class SubscriberDaoImpl : SubscriberDao {
         } finally {
             em.close()
         }
-
-        return subscriber
     }
 
     override fun findAll(): List<Subscriber> {
         val em = JpaManager.getEntityManager()
         try {
-            return em.createNamedQuery("Subscriber.findAll", Subscriber::class.java)
-                .resultList
+            val cb = em.criteriaBuilder
+            val cq = cb.createQuery(Subscriber::class.java)
+            val root = cq.from(Subscriber::class.java)
+
+            cq.select(root)
+
+            return em.createQuery(cq).resultList
         } catch (e: Exception) {
             logger.error("Failed to find all subscribers", e)
             throw DataAccessException("Ошибка при получении списка абонентов.", e)
@@ -73,11 +76,18 @@ class SubscriberDaoImpl : SubscriberDao {
 
     override fun block(subscriberId: Int) {
         executeInTransaction { em ->
-            val updatedCount = em.createNamedQuery("Subscriber.block")
-                .setParameter("id", subscriberId)
-                .executeUpdate()
+            val cb = em.criteriaBuilder
 
-            if (updatedCount == 0) {
+            val cu = cb.createCriteriaUpdate(Subscriber::class.java)
+            val root = cu.from(Subscriber::class.java)
+
+            cu.set(root.get(Subscriber_.isBlocked), true)
+
+            cu.where(cb.equal(root.get(Subscriber_.id), subscriberId))
+
+            val rowsAffected = em.createQuery(cu).executeUpdate()
+
+            if (rowsAffected == 0) {
                 throw EntryNotFoundException("Абонент с ID $subscriberId не найден.")
             }
             logger.info("Subscriber $subscriberId was blocked.")
@@ -101,7 +111,15 @@ class SubscriberDaoImpl : SubscriberDao {
 
     override fun deleteAll() {
         executeInTransaction { em ->
-            em.createNamedQuery("Subscriber.deleteAll").executeUpdate()
+            val cb = em.criteriaBuilder
+            val cq = cb.createQuery(Subscriber::class.java)
+            val root = cq.from(Subscriber::class.java)
+            cq.select(root)
+            val allSubscribers = em.createQuery(cq).resultList
+
+            for (subscriber in allSubscribers) {
+                em.remove(subscriber)
+            }
         }
     }
 }

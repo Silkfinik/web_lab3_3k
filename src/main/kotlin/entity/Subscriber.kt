@@ -4,14 +4,6 @@ import jakarta.persistence.*
 
 @Entity
 @Table(name = "subscribers")
-@NamedQueries(
-    value = [
-        NamedQuery(name = "Subscriber.findById", query = "SELECT s FROM Subscriber s WHERE s.id = :id"),
-        NamedQuery(name = "Subscriber.findAll", query = "SELECT s FROM Subscriber s"),
-        NamedQuery(name = "Subscriber.block", query = "UPDATE Subscriber s SET s.isBlocked = TRUE WHERE s.id = :id"),
-        NamedQuery(name = "Subscriber.deleteAll", query = "DELETE FROM Subscriber s")
-    ]
-)
 data class Subscriber(
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -27,10 +19,21 @@ data class Subscriber(
     @Column(name = "is_blocked")
     var isBlocked: Boolean = false,
 
-    @OneToMany(mappedBy = "subscriber", fetch = FetchType.LAZY, cascade = [CascadeType.ALL])
+    @OneToMany(
+        mappedBy = "subscriber",
+        fetch = FetchType.LAZY,
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true
+    )
     val invoices: MutableList<Invoice> = mutableListOf(),
 
-    @ManyToMany(fetch = FetchType.LAZY, cascade = [CascadeType.PERSIST, CascadeType.MERGE])
+    @ManyToMany(
+        fetch = FetchType.LAZY,
+        cascade = [
+            CascadeType.PERSIST,
+            CascadeType.MERGE
+        ]
+    )
     @JoinTable(
         name = "subscriber_services",
         joinColumns = [JoinColumn(name = "subscriber_id")],
